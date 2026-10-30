@@ -1,0 +1,29 @@
+# Gateway tier: accept the edge's metrics, add the local NATS exporter's own,
+# and forward both one hop up to the hub's Fluent Bit.
+service:
+  flush: 1
+  log_level: info
+
+pipeline:
+  inputs:
+    - name: forward
+      listen: 0.0.0.0
+      port: 24224
+
+    - name: prometheus_scrape
+      tag: metrics.gateway
+      host: nats-exporter-gateway
+      port: 7777
+      metrics_path: /metrics
+      scrape_interval: 10s
+      processors:
+        metrics:
+          - name: labels
+            insert: job nats-gateway
+
+  outputs:
+    - name: forward
+      match: 'metrics.*'
+      host: fluentbit-hub
+      port: 24224
+      retry_limit: no_limits

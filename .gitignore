@@ -1,0 +1,12 @@
+# Compiled binaries
+opcua-connector/opcua-connector
+nats-connector/nats-connector
+
+# Node-RED runtime state (contains generated credential secret)
+node-red/data/.config.*
+node-red/data/node_modules/
+node-red/data/*.backup
+node-red/data/.flows*.backup
+
+.DS_Store
+.env

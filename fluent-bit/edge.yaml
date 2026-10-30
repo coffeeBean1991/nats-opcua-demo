@@ -1,0 +1,25 @@
+# Edge tier: scrape the local NATS exporter and forward the metrics one hop up
+# to the gateway's Fluent Bit. Nothing here talks to Prometheus directly.
+service:
+  flush: 1
+  log_level: info
+
+pipeline:
+  inputs:
+    - name: prometheus_scrape
+      tag: metrics.edge
+      host: nats-exporter-edge
+      port: 7777
+      metrics_path: /metrics
+      scrape_interval: 10s
+      processors:
+        metrics:
+          - name: labels
+            insert: job nats-edge
+
+  outputs:
+    - name: forward
+      match: 'metrics.*'
+      host: fluentbit-gateway
+      port: 24224
+      retry_limit: no_limits

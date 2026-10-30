@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 10s
+
+# Fluent Bit retries buffered chunks independently, so after an upstream tier
+# comes back its backlog can arrive out of order. Accept samples up to 1h late.
+storage:
+  tsdb:
+    out_of_order_time_window: 1h
+
+# No scrape targets: NATS metrics are relayed edge -> gateway -> hub by Fluent
+# Bit and arrive via remote write (--web.enable-remote-write-receiver). The
+# `job` label (nats-edge / nats-gateway / nats-hub) is set by Fluent Bit.
+scrape_configs: []

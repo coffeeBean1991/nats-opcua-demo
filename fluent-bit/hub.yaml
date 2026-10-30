@@ -1,0 +1,30 @@
+# Hub tier: accept the edge + gateway metrics relayed by the gateway, add the
+# local NATS exporter's own, and remote-write everything into Prometheus.
+service:
+  flush: 1
+  log_level: info
+
+pipeline:
+  inputs:
+    - name: forward
+      listen: 0.0.0.0
+      port: 24224
+
+    - name: prometheus_scrape
+      tag: metrics.hub
+      host: nats-exporter-hub
+      port: 7777
+      metrics_path: /metrics
+      scrape_interval: 10s
+      processors:
+        metrics:
+          - name: labels
+            insert: job nats-hub
+
+  outputs:
+    - name: prometheus_remote_write
+      match: 'metrics.*'
+      host: prometheus
+      port: 9090
+      uri: /api/v1/write
+      retry_limit: no_limits

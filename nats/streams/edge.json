@@ -1,0 +1,16 @@
+{
+  "name": "SENSORS_EDGE",
+  "subjects": [
+    "sensors.>"
+  ],
+  "retention": "limits",
+  "storage": "file",
+  "discard": "old",
+  "max_age": 86400000000000,
+  "num_replicas": 1,
+  "max_consumers": -1,
+  "max_msgs": -1,
+  "max_bytes": -1,
+  "max_msgs_per_subject": -1,
+  "max_msg_size": -1
+}

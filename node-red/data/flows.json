@@ -1,0 +1,269 @@
+[
+  {
+    "id": "tab-opcua",
+    "type": "tab",
+    "label": "OPC UA Simulated Server",
+    "disabled": false,
+    "info": "Simulates temperature, pressure and RPM sensors as OPC UA variables.",
+    "env": []
+  },
+  {
+    "id": "cfg-opcua-server",
+    "type": "OpcUa-Server",
+    "z": "tab-opcua",
+    "port": "4840",
+    "name": "OPC UA Simulated PLC",
+    "endpoint": "",
+    "users": "users.json",
+    "nodesetDir": "",
+    "folderName4PKI": "",
+    "autoAcceptUnknownCertificate": true,
+    "registerToDiscovery": false,
+    "constructDefaultAddressSpace": true,
+    "allowAnonymous": true,
+    "endpointNone": true,
+    "endpointSign": false,
+    "endpointSignEncrypt": false,
+    "endpointBasic128Rsa15": false,
+    "endpointBasic256": false,
+    "endpointBasic256Sha256": false,
+    "maxNodesPerBrowse": 0,
+    "maxNodesPerHistoryReadData": 0,
+    "maxNodesPerHistoryReadEvents": 0,
+    "maxNodesPerHistoryUpdateData": 0,
+    "maxNodesPerRead": 0,
+    "maxNodesPerWrite": 0,
+    "maxNodesPerMethodCall": 0,
+    "maxNodesPerRegisterNodes": 0,
+    "maxNodesPerNodeManagement": 0,
+    "maxMonitoredItemsPerCall": 0,
+    "maxNodesPerHistoryUpdateEvents": 0,
+    "maxNodesPerTranslateBrowsePathsToNodeIds": 0,
+    "x": 700,
+    "y": 260,
+    "wires": [
+      [
+        "debug-server"
+      ]
+    ]
+  },
+  {
+    "id": "debug-server",
+    "type": "debug",
+    "z": "tab-opcua",
+    "name": "server events",
+    "active": false,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "false",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 950,
+    "y": 260,
+    "wires": []
+  },
+  {
+    "id": "comment-setup",
+    "type": "comment",
+    "z": "tab-opcua",
+    "name": "1) Create the three variables once at startup",
+    "info": "",
+    "x": 290,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "add-temp",
+    "type": "inject",
+    "z": "tab-opcua",
+    "name": "addVariable Temperature",
+    "props": [
+      { "p": "payload" },
+      { "p": "topic", "vt": "str" }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 1,
+    "topic": "ns=1;s=Temperature;datatype=Double",
+    "payload": "{\"opcuaCommand\": \"addVariable\"}",
+    "payloadType": "json",
+    "x": 310,
+    "y": 140,
+    "wires": [
+      [ "cfg-opcua-server" ]
+    ]
+  },
+  {
+    "id": "add-pressure",
+    "type": "inject",
+    "z": "tab-opcua",
+    "name": "addVariable Pressure",
+    "props": [
+      { "p": "payload" },
+      { "p": "topic", "vt": "str" }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 1.2,
+    "topic": "ns=1;s=Pressure;datatype=Double",
+    "payload": "{\"opcuaCommand\": \"addVariable\"}",
+    "payloadType": "json",
+    "x": 305,
+    "y": 180,
+    "wires": [
+      [ "cfg-opcua-server" ]
+    ]
+  },
+  {
+    "id": "add-rpm",
+    "type": "inject",
+    "z": "tab-opcua",
+    "name": "addVariable RPM",
+    "props": [
+      { "p": "payload" },
+      { "p": "topic", "vt": "str" }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 1.4,
+    "topic": "ns=1;s=RPM;datatype=Double",
+    "payload": "{\"opcuaCommand\": \"addVariable\"}",
+    "payloadType": "json",
+    "x": 285,
+    "y": 220,
+    "wires": [
+      [ "cfg-opcua-server" ]
+    ]
+  },
+  {
+    "id": "comment-sim",
+    "type": "comment",
+    "z": "tab-opcua",
+    "name": "2) Every 2s, random-walk each value and write it into the server",
+    "info": "",
+    "x": 330,
+    "y": 320,
+    "wires": []
+  },
+  {
+    "id": "sim-temp-inject",
+    "type": "inject",
+    "z": "tab-opcua",
+    "name": "tick 2s",
+    "props": [
+      { "p": "payload" }
+    ],
+    "repeat": "2",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 2,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 150,
+    "y": 380,
+    "wires": [
+      [ "sim-temp-fn" ]
+    ]
+  },
+  {
+    "id": "sim-temp-fn",
+    "type": "function",
+    "z": "tab-opcua",
+    "name": "simulate Temperature",
+    "func": "let value = flow.get('temperature');\nif (value === undefined || value === null) {\n    value = 70; // deg C, nominal\n}\nvalue += (Math.random() - 0.5) * 2;\nif (value < 55) value = 55;\nif (value > 95) value = 95;\nflow.set('temperature', value);\n\nmsg.payload = {\n    messageType: 'Variable',\n    variableName: 'Temperature',\n    datatype: 'Double',\n    namespace: '1',\n    variableValue: value\n};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 350,
+    "y": 380,
+    "wires": [
+      [ "cfg-opcua-server" ]
+    ]
+  },
+  {
+    "id": "sim-pressure-inject",
+    "type": "inject",
+    "z": "tab-opcua",
+    "name": "tick 2s",
+    "props": [
+      { "p": "payload" }
+    ],
+    "repeat": "2",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 2,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 150,
+    "y": 440,
+    "wires": [
+      [ "sim-pressure-fn" ]
+    ]
+  },
+  {
+    "id": "sim-pressure-fn",
+    "type": "function",
+    "z": "tab-opcua",
+    "name": "simulate Pressure",
+    "func": "let value = flow.get('pressure');\nif (value === undefined || value === null) {\n    value = 5; // bar, nominal\n}\nvalue += (Math.random() - 0.5) * 0.4;\nif (value < 2) value = 2;\nif (value > 8) value = 8;\nflow.set('pressure', value);\n\nmsg.payload = {\n    messageType: 'Variable',\n    variableName: 'Pressure',\n    datatype: 'Double',\n    namespace: '1',\n    variableValue: value\n};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 345,
+    "y": 440,
+    "wires": [
+      [ "cfg-opcua-server" ]
+    ]
+  },
+  {
+    "id": "sim-rpm-inject",
+    "type": "inject",
+    "z": "tab-opcua",
+    "name": "tick 2s",
+    "props": [
+      { "p": "payload" }
+    ],
+    "repeat": "2",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 2,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 150,
+    "y": 500,
+    "wires": [
+      [ "sim-rpm-fn" ]
+    ]
+  },
+  {
+    "id": "sim-rpm-fn",
+    "type": "function",
+    "z": "tab-opcua",
+    "name": "simulate RPM",
+    "func": "let value = flow.get('rpm');\nif (value === undefined || value === null) {\n    value = 1500; // nominal shaft speed\n}\nvalue += (Math.random() - 0.5) * 60;\nif (value < 1200) value = 1200;\nif (value > 1800) value = 1800;\nflow.set('rpm', value);\n\nmsg.payload = {\n    messageType: 'Variable',\n    variableName: 'RPM',\n    datatype: 'Double',\n    namespace: '1',\n    variableValue: value\n};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 340,
+    "y": 500,
+    "wires": [
+      [ "cfg-opcua-server" ]
+    ]
+  }
+]

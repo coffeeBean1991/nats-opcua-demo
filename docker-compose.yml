@@ -1,0 +1,251 @@
+name: nats-opcua-demo
+
+networks:
+  demo:
+
+volumes:
+  nats-edge-data:
+  nats-gateway-data:
+  nats-hub-data:
+  influxdb-data:
+
+services:
+  # 1. Node-RED hosting a simulated OPC UA server (temperature, pressure, RPM)
+  opcua-server:
+    build: ./node-red
+    container_name: opcua-server
+    hostname: opcua-server
+    networks: [demo]
+    ports:
+      - "1880:1880"   # Node-RED editor
+      - "4840:4840"   # OPC UA endpoint
+    environment:
+      - FLOWS=flows.json
+    volumes:
+      - ./node-red/data:/data
+    restart: unless-stopped
+
+  # 2. Go OPC UA client -> publishes sensor readings onto the NATS edge tier
+  opcua-connector:
+    build: ./opcua-connector
+    container_name: opcua-connector
+    networks: [demo]
+    environment:
+      - OPCUA_ENDPOINT=opc.tcp://opcua-server:4840
+      - NATS_URL=nats://nats-edge:4222
+      - NATS_SUBJECT_PREFIX=sensors
+    depends_on:
+      - opcua-server
+      - nats-edge
+    restart: unless-stopped
+
+  # 3. NATS edge tier - JetStream enabled, leafs into the gateway
+  nats-edge:
+    image: nats:2.10-alpine
+    container_name: nats-edge
+    networks: [demo]
+    command: ["-c", "/etc/nats/edge.conf"]
+    volumes:
+      - ./nats/edge.conf:/etc/nats/edge.conf:ro
+      - nats-edge-data:/data/jetstream
+    depends_on:
+      - nats-gateway
+    restart: unless-stopped
+
+  nats-box-edge:
+    image: natsio/nats-box:latest
+    container_name: nats-box-edge
+    networks: [demo]
+    environment:
+      - NATS_URL=nats://nats-edge:4222
+    entrypoint: ["/streams/create-stream.sh", "/streams/edge.json"]
+    volumes:
+      - ./nats/streams:/streams:ro
+    depends_on:
+      - nats-edge
+    restart: on-failure
+
+  # 4. NATS gateway tier - JetStream enabled, accepts edge as a leaf and is itself a leaf of the hub
+  nats-gateway:
+    image: nats:2.10-alpine
+    container_name: nats-gateway
+    networks: [demo]
+    command: ["-c", "/etc/nats/gateway.conf"]
+    volumes:
+      - ./nats/gateway.conf:/etc/nats/gateway.conf:ro
+      - nats-gateway-data:/data/jetstream
+    depends_on:
+      - nats-hub
+    restart: unless-stopped
+
+  nats-box-gateway:
+    image: natsio/nats-box:latest
+    container_name: nats-box-gateway
+    networks: [demo]
+    environment:
+      - NATS_URL=nats://nats-gateway:4222
+    entrypoint: ["/streams/create-stream.sh", "/streams/gateway.json"]
+    volumes:
+      - ./nats/streams:/streams:ro
+    depends_on:
+      - nats-gateway
+    restart: on-failure
+
+  # 5. NATS hub tier - JetStream enabled, accepts the gateway as a leaf
+  nats-hub:
+    image: nats:2.10-alpine
+    container_name: nats-hub
+    networks: [demo]
+    command: ["-c", "/etc/nats/hub.conf"]
+    volumes:
+      - ./nats/hub.conf:/etc/nats/hub.conf:ro
+      - nats-hub-data:/data/jetstream
+    restart: unless-stopped
+
+  nats-box-hub:
+    image: natsio/nats-box:latest
+    container_name: nats-box-hub
+    networks: [demo]
+    environment:
+      - NATS_URL=nats://nats-hub:4222
+    entrypoint: ["/streams/create-stream.sh", "/streams/hub.json"]
+    volumes:
+      - ./nats/streams:/streams:ro
+    depends_on:
+      - nats-hub
+    restart: on-failure
+
+  # 6. Go JetStream consumer on SENSORS_HUB -> writes into InfluxDB
+  nats-connector:
+    build: ./nats-connector
+    container_name: nats-connector
+    networks: [demo]
+    environment:
+      - NATS_URL=nats://nats-hub:4222
+      - NATS_STREAM=SENSORS_HUB
+      - NATS_CONSUMER=influxdb-writer
+      - INFLUX_URL=http://influxdb:8086
+      - INFLUX_TOKEN=demo-token-change-me
+      - INFLUX_ORG=synadia-demo
+      - INFLUX_BUCKET=sensors
+    depends_on:
+      - nats-hub
+      - influxdb
+    restart: unless-stopped
+
+  # 7. InfluxDB
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    networks: [demo]
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=admin12345
+      - DOCKER_INFLUXDB_INIT_ORG=synadia-demo
+      - DOCKER_INFLUXDB_INIT_BUCKET=sensors
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=demo-token-change-me
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    restart: unless-stopped
+
+  # 8. Grafana - dashboard over the InfluxDB data (and NATS Prometheus metrics)
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: grafana
+    networks: [demo]
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - influxdb
+      - prometheus
+    restart: unless-stopped
+
+  # --- NATS observability: one exporter per tier, scraped by that tier's Fluent Bit ---
+  nats-exporter-edge:
+    image: natsio/prometheus-nats-exporter:latest
+    container_name: nats-exporter-edge
+    networks: [demo]
+    command: ["-varz", "-connz", "-subz", "-leafz", "-jsz=all", "-use_internal_server_name", "http://nats-edge:8222"]
+    depends_on:
+      - nats-edge
+    restart: unless-stopped
+
+  nats-exporter-gateway:
+    image: natsio/prometheus-nats-exporter:latest
+    container_name: nats-exporter-gateway
+    networks: [demo]
+    command: ["-varz", "-connz", "-subz", "-leafz", "-jsz=all", "-use_internal_server_name", "http://nats-gateway:8222"]
+    depends_on:
+      - nats-gateway
+    restart: unless-stopped
+
+  nats-exporter-hub:
+    image: natsio/prometheus-nats-exporter:latest
+    container_name: nats-exporter-hub
+    networks: [demo]
+    command: ["-varz", "-connz", "-subz", "-leafz", "-jsz=all", "-use_internal_server_name", "http://nats-hub:8222"]
+    depends_on:
+      - nats-hub
+    restart: unless-stopped
+
+  # --- Metrics relay: one Fluent Bit per tier scrapes its local exporter and
+  # forwards edge -> gateway -> hub; the hub one remote-writes into Prometheus ---
+  fluentbit-edge:
+    image: fluent/fluent-bit:3.2
+    container_name: fluentbit-edge
+    networks: [demo]
+    command: ["-c", "/fluent-bit/etc/fluent-bit.yaml"]
+    volumes:
+      - ./fluent-bit/edge.yaml:/fluent-bit/etc/fluent-bit.yaml:ro
+    depends_on:
+      - nats-exporter-edge
+      - fluentbit-gateway
+    restart: unless-stopped
+
+  fluentbit-gateway:
+    image: fluent/fluent-bit:3.2
+    container_name: fluentbit-gateway
+    networks: [demo]
+    command: ["-c", "/fluent-bit/etc/fluent-bit.yaml"]
+    volumes:
+      - ./fluent-bit/gateway.yaml:/fluent-bit/etc/fluent-bit.yaml:ro
+    depends_on:
+      - nats-exporter-gateway
+      - fluentbit-hub
+    restart: unless-stopped
+
+  fluentbit-hub:
+    image: fluent/fluent-bit:3.2
+    container_name: fluentbit-hub
+    networks: [demo]
+    command: ["-c", "/fluent-bit/etc/fluent-bit.yaml"]
+    volumes:
+      - ./fluent-bit/hub.yaml:/fluent-bit/etc/fluent-bit.yaml:ro
+    depends_on:
+      - nats-exporter-hub
+      - prometheus
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    networks: [demo]
+    ports:
+      - "9090:9090"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: unless-stopped
